@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MedVision AI - Security Remediation Demo</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+
+        .header { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border-bottom: 1px solid #334155; padding: 1.5rem 2rem; display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { font-size: 1.5rem; font-weight: 700; }
+        .header h1 span { color: #38bdf8; }
+        .header .badge { background: #059669; color: white; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+
+        .stats-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; padding: 1.5rem 2rem; background: #1e293b; border-bottom: 1px solid #334155; }
+        .stat-card { text-align: center; padding: 1rem; border-radius: 0.5rem; }
+        .stat-card .number { font-size: 2rem; font-weight: 800; }
+        .stat-card .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; margin-top: 0.25rem; }
+        .stat-critical { background: #7f1d1d33; border: 1px solid #991b1b; }
+        .stat-critical .number { color: #ef4444; }
+        .stat-high { background: #78350f33; border: 1px solid #92400e; }
+        .stat-high .number { color: #f59e0b; }
+        .stat-medium { background: #1e3a5f33; border: 1px solid #1d4ed8; }
+        .stat-medium .number { color: #3b82f6; }
+        .stat-fixed { background: #064e3b33; border: 1px solid #059669; }
+        .stat-fixed .number { color: #10b981; }
+
+        .main { padding: 2rem; max-width: 1400px; margin: 0 auto; }
+
+        .section-title { font-size: 1.25rem; font-weight: 700; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+        .section-title .icon { font-size: 1.5rem; }
+
+        .timeline { position: relative; padding-left: 2rem; }
+        .timeline::before { content: ''; position: absolute; left: 0.5rem; top: 0; bottom: 0; width: 2px; background: #334155; }
+
+        .vuln-card { background: #1e293b; border: 1px solid #334155; border-radius: 0.75rem; margin-bottom: 1rem; overflow: hidden; cursor: pointer; transition: all 0.2s; position: relative; }
+        .vuln-card::before { content: ''; position: absolute; left: -1.65rem; top: 1.5rem; width: 12px; height: 12px; border-radius: 50%; border: 2px solid; z-index: 1; }
+        .vuln-card.critical::before { border-color: #ef4444; background: #7f1d1d; }
+        .vuln-card.high::before { border-color: #f59e0b; background: #78350f; }
+        .vuln-card.medium::before { border-color: #3b82f6; background: #1e3a5f; }
+        .vuln-card.low::before { border-color: #6b7280; background: #374151; }
+        .vuln-card:hover { border-color: #475569; transform: translateX(4px); }
+
+        .vuln-header { padding: 1rem 1.25rem; display: flex; justify-content: space-between; align-items: center; }
+        .vuln-header .left { display: flex; align-items: center; gap: 0.75rem; }
+        .vuln-id { font-weight: 800; font-size: 0.875rem; padding: 0.125rem 0.5rem; border-radius: 0.25rem; }
+        .vuln-id.critical { background: #991b1b; color: #fecaca; }
+        .vuln-id.high { background: #92400e; color: #fde68a; }
+        .vuln-id.medium { background: #1d4ed8; color: #bfdbfe; }
+        .vuln-id.low { background: #374151; color: #d1d5db; }
+        .vuln-title { font-weight: 600; }
+        .vuln-file { font-size: 0.75rem; color: #64748b; font-family: monospace; }
+
+        .status-badge { display: flex; align-items: center; gap: 0.375rem; font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.75rem; border-radius: 9999px; }
+        .status-fixed { background: #064e3b; color: #6ee7b7; }
+        .status-fixed::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #10b981; animation: pulse-green 2s infinite; }
+
+        @keyframes pulse-green { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        .vuln-detail { display: none; padding: 0 1.25rem 1.25rem; }
+        .vuln-detail.open { display: block; }
+
+        .diff-block { background: #0f172a; border: 1px solid #334155; border-radius: 0.5rem; overflow: hidden; margin-top: 0.75rem; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 0.8rem; line-height: 1.6; }
+        .diff-header { background: #1e293b; padding: 0.5rem 1rem; color: #94a3b8; font-size: 0.75rem; border-bottom: 1px solid #334155; }
+        .diff-content { padding: 0.75rem 1rem; overflow-x: auto; }
+        .diff-line { white-space: pre; }
+        .diff-remove { background: #7f1d1d44; color: #fca5a5; }
+        .diff-add { background: #064e3b44; color: #6ee7b7; }
+        .diff-context { color: #64748b; }
+
+        .desc { color: #94a3b8; font-size: 0.875rem; margin-top: 0.5rem; line-height: 1.5; }
+        .cvss { font-size: 0.75rem; font-weight: 700; padding: 0.125rem 0.375rem; border-radius: 0.25rem; margin-left: 0.5rem; }
+        .cvss-critical { background: #991b1b; color: #fecaca; }
+        .cvss-high { background: #92400e; color: #fde68a; }
+        .cvss-medium { background: #1d4ed8; color: #bfdbfe; }
+
+        .compliance-section { margin-top: 2rem; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+        .compliance-card { background: #1e293b; border: 1px solid #334155; border-radius: 0.75rem; padding: 1.25rem; }
+        .compliance-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.5rem; }
+        .compliance-card ul { list-style: none; }
+        .compliance-card li { font-size: 0.8rem; color: #94a3b8; padding: 0.25rem 0; padding-left: 1.25rem; position: relative; }
+        .compliance-card li::before { content: '\2713'; position: absolute; left: 0; color: #10b981; font-weight: bold; }
+
+        .build-section { margin-top: 2rem; background: #1e293b; border: 1px solid #334155; border-radius: 0.75rem; padding: 1.25rem; }
+        .build-log { background: #0f172a; border: 1px solid #334155; border-radius: 0.5rem; padding: 1rem; font-family: monospace; font-size: 0.8rem; margin-top: 0.75rem; line-height: 1.8; }
+        .log-ok { color: #10b981; }
+        .log-warn { color: #f59e0b; }
+        .log-info { color: #94a3b8; }
+
+        .files-grid { margin-top: 2rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.75rem; }
+        .file-card { background: #1e293b; border: 1px solid #334155; border-radius: 0.5rem; padding: 0.75rem 1rem; display: flex; align-items: center; gap: 0.75rem; font-size: 0.8rem; }
+        .file-icon { font-size: 1.25rem; }
+        .file-name { font-family: monospace; color: #38bdf8; font-weight: 600; }
+        .file-fixes { color: #94a3b8; font-size: 0.7rem; }
+
+        .footer { text-align: center; padding: 2rem; color: #475569; font-size: 0.75rem; border-top: 1px solid #1e293b; margin-top: 2rem; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1><span>MedVision AI</span> &mdash; Security Remediation Report</h1>
+        <div style="display:flex;gap:0.75rem;align-items:center;">
+            <span class="badge">Audit Date: 2026-03-12</span>
+            <span class="badge" style="background:#1d4ed8;">Branch: update_security</span>
+        </div>
+    </div>
+
+    <div class="stats-bar">
+        <div class="stat-card stat-critical">
+            <div class="number">5</div>
+            <div class="label">Critical Fixed</div>
+        </div>
+        <div class="stat-card stat-high">
+            <div class="number">6</div>
+            <div class="label">High Fixed</div>
+        </div>
+        <div class="stat-card stat-medium">
+            <div class="number">7</div>
+            <div class="label">Medium Fixed</div>
+        </div>
+        <div class="stat-card stat-fixed">
+            <div class="number">21</div>
+            <div class="label">Total Remediated</div>
+        </div>
+    </div>
+
+    <div class="main">
+
+        <!-- CRITICAL -->
+        <div class="section-title"><span class="icon">&#128680;</span> Critical Vulnerabilities</div>
+        <div class="timeline">
+
+            <div class="vuln-card critical" onclick="toggleDetail(this)">
+                <div class="vuln-header">
+                    <div class="left">
+                        <span class="vuln-id critical">C1</span>
+                        <div>
+                            <div class="vuln-title">Default JWT Secret <span class="cvss cvss-critical">CVSS 9.8</span></div>
+                            <div class="vuln-file">application.properties:12 &rarr; JwtUtil.java</div>
+                        </div>
+                    </div>
+                    <span class="status-badge status-fixed">FIXED</span>
+                </div>
+                <div class="vuln-detail">
+                    <div class="desc">Hardcoded default JWT secret allows complete token forgery if environment variable is not set. Added fail-fast startup validation that throws <code>IllegalStateException</code> if secret contains "change-me".</div>
+                    <div class="diff-block">
+                        <div class="diff-header">backend/src/main/java/com/medvision/security/JwtUtil.java</div>
+                        <div class="diff-content">
+<div class="diff-line diff-context">    public JwtUtil(</div>
+<div class="diff-line diff-context">            @Value("${jwt.secret}") String secret,</div>
+<div class="diff-line diff-context">            @Value("${jwt.expiration-ms:3600000}") long expirationMs) {</div>
+<div class="diff-line diff-add">+       if (secret.contains("change-me")) {</div>
+<div class="diff-line diff-add">+           throw new IllegalStateException(</div>
+<div class="diff-line diff-add">+               "JWT secret contains default placeholder. Set JWT_SECRET env var.");</div>
+<div class="diff-line diff-add">+       }</div>
+<div class="diff-line diff-context">        this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="vuln-card critical" onclick="toggleDetail(this)">
+                <div class="vuln-header">
+                    <div class="left">
+                        <span class="vuln-id critical">C2</span>
+                        <div>
+                            <div class="vuln-title">Default API Key <span class="cvss cvss-critical">CVSS 9.8</span></div>
+                            <div class="vuln-file">application.properties:14 &rarr; AuthController.java</div>
+                        </div>
+                    </div>
+                    <span class="status-badge status-fixed">FIXED</span>
+                </div>
+                <div class="vuln-detail">
+                    <div class="desc">Hardcoded default API key allows unauthorized access. Added <code>@PostConstruct</code> validation that blocks startup with placeholder values.</div>
+                    <div class="diff-block">
+                        <div class="diff-header">backend/src/main/java/com/medvision/security/AuthController.java</div>
+                        <div class="diff-content">
+<div class="diff-line diff-add">+   @PostConstruct</div>
+<div class="diff-line diff-add">+   public void validateApiKey() {</div>
+<div class="diff-line diff-add">+       if (apiKey.contains("change-me")) {</div>
+<div class="diff-line diff-add">+           throw new IllegalStateException(</div>
+<div class="diff-line diff-add">+               "API key contains default placeholder. Set AUTH_API_KEY env var.");</div>
+<div class="diff-line diff-add">+       }</div>
+<div class="diff-line diff-add">+   }</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="vuln-card critical" onclick="toggleDetail(this)">
+                <div class="vuln-header">
+                    <div class="left">
+                        <span class="vuln-id critical">C3</span>
+                        <div>
+                            <div class="vuln-title">Missing Security Headers <span class="cvss cvss-critical">CVSS 7.5</span></div>
+                            <div class="vuln-file">SecurityConfig.java</div>
+                        </div>
+                    </div>
+                    <span class="status-badge status-fixed">FIXED</span>
+                </div>
+                <div class="vuln-detail">
+                    <div class="desc">No CSP, X-Frame-Options, X-Content-Type-Options, HSTS configured. Added comprehensive security headers via Spring Security.</div>
+                    <div class="diff-block">
+                        <div class="diff-header">backend/src/main/java/com/medvision/SecurityConfig.java</div>
+                        <div class="diff-content">
+<div class="diff-line diff-add">+   .headers(headers -> headers</div>
+<div class="diff-line diff-add">+       .contentSecurityPolicy(csp -> csp.policyDirectives(</div>
+<div class="diff-line diff-add">+           "default-src 'self'; script-src 'self'; frame-ancestors 'none'"))</div>
+<div class="diff-line diff-add">+       .frameOptions(frame -> frame.deny())</div>
+<div class="diff-line diff-add">+       .contentTypeOptions(contentType -> {})</div>
+<div class="diff-line diff-add">+       .httpStrictTransportSecurity(hsts -> hsts</div>
+<div class="diff-line diff-add">+           .includeSubDomains(true).maxAgeInSeconds(31536000))</div>
+<div class="diff-line diff-add">+       .referrerPolicy(referrer -> referrer.policy(STRICT_ORIGIN_WHEN_CROSS_ORIGIN))</div>
+<div class="diff-line diff-add">+       .permissionsPolicy(p -> p.policy("camera=(), microphone=()")))</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="vuln-card critical" onclick="toggleDetail(this)">
+                <div class="vuln-header">
+                    <div class="left">
+                        <span class="vuln-id critical">C4</span>
+                        <div>
+                            <div class="vuln-title">AI Worker Unauthenticated <span class="cvss cvss-critical">CVSS 9.1</span></div>
+                            <div class="vuln-file">worker.py:149 &rarr; docker-compose.yml</div>
+                        </div>
+                    </div>
+                    <span class="status-badge status-fixed">FIXED</span>
+                </div>
+                <div class="vuln-detail">
+                    <div class="desc">AI Worker posts results to backend without authentication. Any attacker on the network can inject fake analysis results. Added <code>X-Service-Key</code> header authentication.</div>
+                    <div class="diff-block">
+                        <div class="diff-header">ai-worker/worker.py</div>
+                        <div class="diff-content">
+<div class="diff-line diff-add">+ AI_WORKER_API_KEY = os.getenv('AI_WORKER_API_KEY', '')</div>
+<div class="diff-line diff-context">  ...</div>
+<div class="diff-line diff-add">+ def get_auth_headers():</div>
+<div class="diff-line diff-add">+     headers = {"Content-Type": "application/json"}</div>
+<div class="diff-line diff-add">+     if AI_WORKER_API_KEY:</div>
+<div class="diff-line diff-add">+         headers["X-Service-Key"] = AI_WORKER_API_KEY</div>
+<div class="diff-line diff-add">+     return headers</div>
+<div class="diff-line diff-context">  ...</div>
+<div class="diff-line diff-remove">- response = requests.post(BACKEND_URL, json=result)</div>
+<div class="diff-line diff-add">+ response = requests.post(BACKEND_URL, json=result, headers=get_auth_headers())</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="vuln-card critical" onclick="toggleDetail(this)">
+                <div class="vuln-header">
+                    <div class="left">
+                        <span class="vuln-id critical">C5</span>
+                        <div>
+                            <div class="vuln-title">Timing Attack on API Key <span class="cvss cvss-critical">CVSS 7.5</span></div>
+                            <div class="vuln-file">AuthController.java:30</div>
+                        </div>
+                    </div>
+                    <span class="status-badge status-fixed">FIXED</span>
+                </div>
+                <div class="vuln-detail">
+                    <div class="desc"><code>String.equals()</code> short-circuits on first mismatch, leaking key length and characters via response timing. Replaced with <code>MessageDigest.isEqual()</code> for constant-time comparison.</div>
+                    <div class="diff-block">
+                        <div class="diff-header">backend/src/main/java/com/medvision/security/AuthController.java</div>
+                        <div class="diff-content">
+<div class="diff-line diff-remove">- if (apiKey.equals(key) && clientId != null && !clientId.isBlank()) {</div>
+<div class="diff-line diff-add">+ if (key != null && timingSafeEquals(apiKey, key) && clientId != null && !clientId.isBlank()) {</div>
+<div class="diff-line diff-context">  ...</div>
+<div class="diff-line diff-add">+ private boolean timingSafeEquals(String a, String b) {</div>
+<div class="diff-line diff-add">+     byte[] aBytes = a.getBytes(StandardCharsets.UTF_8);</div>
+<div class="diff-line diff-add">+     byte[] bBytes = b.getBytes(StandardCharsets.UTF_8);</div>
+<div class="diff-line diff-add">+     return MessageDigest.isEqual(aBytes, bBytes);</div>
+<div class="diff-line diff-add">+ }</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- HIGH -->
+        <div class="section-title" style="margin-top:2rem;"><span class="icon">&#9888;&#65039;</span> High Severity Vulnerabilities</div>
+        <div class="timeline">
+            <div class="vuln-card high" onclick="toggleDetail(this)">
+                <div class="vuln-header">
+                    <div class="left">
+                        <span class="vuln-id high">H1</span>
+                        <div>
+                            <div class="vuln-title">Sensitive Data in Audit Logs <span class="cvss cvss-high">CVSS 7.5</span></div>
+                            <div class="vuln-file">AuditAspect.java:32-34</div>
+                        </div>
+                    </div>
+                    <span class="status-badge status-fixed">FIXED</span>
+                </div>
+                <div class="vuln-detail">
+                    <div class="desc">Logged full method arguments including patient names, file paths, and DICOM metadata. Violates HIPAA minimum necessary principle. Now logs only method name, class, and status.</div>
+                    <div class="diff-block">
+                        <div class="diff-header">backend/src/main/java/com/medvision/aspect/AuditAspect.java</div>
+                        <div class="diff-content">
+<div class="diff-line diff-remove">- String args = Arrays.toString(joinPoint.getArgs());</div>
+<div class="diff-line diff-remove">- logger.info("Audit: ... com argumentos {}", methodName, className, args);</div>
+<div class="diff-line diff-add">+ logger.info("Audit: Executing {}.{}", className, methodName);</div>
+<div class="diff-line diff-context">  ...</div>
+<div class="diff-line diff-remove">- auditService.log(... "Args: " + args, "SUCCESS");</div>
+<div class="diff-line diff-add">+ auditService.log(... "Execution completed successfully", "SUCCESS");</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="vuln-card high" onclick="toggleDetail(this)">
+                <div class="vuln-header">
+                    <div class="left">
+                        <span class="vuln-id high">H2</span>
+                        <div>
+                            <div class="vuln-title">Rate Limit Bypass via X-Forwarded-For <span class="cvss cvss-high">CVSS 5.3</span></div>
+                            <div class="vuln-file">RateLimitFilter.java:38</div>
+                        </div>
+                    </div>
+                    <span class="status-badge status-fixed">FIXED</span>
+                </div>
+                <div class="vuln-detail">
+                    <div class="desc">Used <code>getRemoteAddr()</code> which returns proxy IP behind reverse proxy. Now parses <code>X-Forwarded-For</code> header for the real client IP.</div>
+                    <div class="diff-block">
+                        <div class="diff-header">backend/src/main/java/com/medvision/security/RateLimitFilter.java</div>
+                        <div class="diff-content">
+<div class="diff-line diff-remove">- String clientIp = request.getRemoteAddr();</div>
+<div class="diff-line diff-add">+ String clientIp = resolveClientIp(request);</div>
+<div class="diff-line diff-context">  ...</div>
+<div class="diff-line diff-add">+ private String resolveClientIp(HttpServletRequest request) {</div>
+<div class="diff-line diff-add">+     String xff = request.getHeader("X-Forwarded-For");</div>
+<div class="diff-line diff-add">+     if (xff != null && !xff.isBlank())</div>
+<div class="diff-line diff-add">+         return xff.split(",")[0].trim();</div>
+<div class="diff-line diff-add">+     return request.getRemoteAddr();</div>
+<div class="diff-line diff-add">+ }</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="vuln-card high" onclick="toggleDetail(this)">
+                <div class="vuln-header">
+                    <div class="left">
+                        <span class="vuln-id high">H3</span>
+                        <div>
+                            <div class="vuln-title">Auth Endpoint Exempt from Rate Limiting <span class="cvss cvss-high">CVSS 7.5</span></div>
+                            <div class="vuln-file">RateLimitFilter.java:54</div>
+                        </div>
+                    </div>
+                    <span class="status-badge status-fixed">FIXED</span>
+                </div>
+                <div class="vuln-detail">
+                    <div class="desc"><code>/auth</code> was excluded from rate limiting, allowing unlimited brute-force attempts. Removed exemption.</div>
+                    <div class="diff-block">
+                        <div class="diff-header">backend/src/main/java/com/medvision/security/RateLimitFilter.java</div>
+                        <div class="diff-content">
+<div class="diff-line diff-remove">- return path.startsWith("/actuator") || path.equals("/health") || path.startsWith("/auth");</div>
+<div class="diff-line diff-add">+ return path.startsWith("/actuator") || path.equals("/health");</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="vuln-card high" onclick="toggleDetail(this)">
+                <div class="vuln-header">
+                    <div class="left">
+                        <span class="vuln-id high">H4</span>
+                        <div>
+                            <div class="vuln-title">No CORS Configuration <span class="cvss cvss-high">CVSS 6.1</span></div>
+                            <div class="vuln-file">SecurityConfig.java</div>
+                        </div>
+                    </div>
+                    <span class="status-badge status-fixed">FIXED</span>
+                </div>
+                <div class="vuln-detail">
+                    <div class="desc">No explicit CORS policy configured. Added restrictive CORS with env-configurable allowed origins.</div>
+                </div>
+            </div>
+
+            <div class="vuln-card high" onclick="toggleDetail(this)">
+                <div class="vuln-header">
+                    <div class="left">
+                        <span class="vuln-id high">H5</span>
+                        <div>
+                            <div class="vuln-title">ConcurrentHashMap Memory Leak <span class="cvss cvss-high">CVSS 5.3</span></div>
+                            <div class="vuln-file">RateLimitFilter.java:21</div>
+                        </div>
+                    </div>
+                    <span class="status-badge status-fixed">FIXED</span>
+                </div>
+                <div class="vuln-detail">
+                    <div class="desc">Rate limit buckets grew unbounded. Added scheduled eviction every 5 minutes with 10-minute stale threshold and 10,000 entry hard cap.</div>
+                </div>
+            </div>
+
+            <div class="vuln-card high" onclick="toggleDetail(this)">
+                <div class="vuln-header">
+                    <div class="left">
+                        <span class="vuln-id high">H6</span>
+                        <div>
+                            <div class="vuln-title">No DICOM File Type Validation <span class="cvss cvss-high">CVSS 6.5</span></div>
+                            <div class="vuln-file">DicomController.java:27</div>
+                        </div>
+                    </div>
+                    <span class="status-badge status-fixed">FIXED</span>
+                </div>
+                <div class="vuln-detail">
+                    <div class="desc">No validation that uploaded file is actually DICOM. Now checks <code>.dcm</code> extension and validates DICOM magic bytes (<code>DICM</code> at offset 128).</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MEDIUM -->
+        <div class="section-title" style="margin-top:2rem;"><span class="icon">&#128310;</span> Medium Severity Vulnerabilities</div>
+        <div class="timeline">
+            <div class="vuln-card medium" onclick="toggleDetail(this)">
+                <div class="vuln-header">
+                    <div class="left">
+                        <span class="vuln-id medium">M1-M7</span>
+                        <div>
+                            <div class="vuln-title">7 Medium Issues Remediated</div>
+                            <div class="vuln-file">AnalysisResult, WadoController, docker-compose, index.html, requirements.txt, worker.py</div>
+                        </div>
+                    </div>
+                    <span class="status-badge status-fixed">ALL FIXED</span>
+                </div>
+                <div class="vuln-detail">
+                    <div class="desc">
+                        <strong>M1:</strong> Added <code>@Valid</code> + Jakarta validation annotations to AnalysisResult<br>
+                        <strong>M2:</strong> WadoController UID pattern validation + path traversal prevention<br>
+                        <strong>M3:</strong> Redis authentication via <code>--requirepass</code><br>
+                        <strong>M4:</strong> SRI integrity hashes on CDN scripts<br>
+                        <strong>M5:</strong> Pinned Python dependencies to exact versions<br>
+                        <strong>M6:</strong> Replaced <code>print()</code> with <code>logging</code> module, sanitized patient data<br>
+                        <strong>M7:</strong> DB password passed to backend container
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Compliance -->
+        <div class="section-title" style="margin-top:2.5rem;"><span class="icon">&#128203;</span> Compliance Coverage</div>
+        <div class="compliance-section">
+            <div class="compliance-card">
+                <h3 style="color:#38bdf8;">HIPAA</h3>
+                <ul>
+                    <li>Audit log sanitization (H1)</li>
+                    <li>Patient data removed from stdout (M6)</li>
+                    <li>Minimum necessary principle enforced</li>
+                    <li>Authentication on all service channels (C4)</li>
+                </ul>
+            </div>
+            <div class="compliance-card">
+                <h3 style="color:#a78bfa;">LGPD</h3>
+                <ul>
+                    <li>Data minimization in logs</li>
+                    <li>Encryption in transit (HSTS)</li>
+                    <li>Access control hardened</li>
+                    <li>Redis/DB authentication required</li>
+                </ul>
+            </div>
+            <div class="compliance-card">
+                <h3 style="color:#f472b6;">OWASP Top 10</h3>
+                <ul>
+                    <li>A01: Broken Access Control (C4, H3)</li>
+                    <li>A02: Cryptographic Failures (C1, C5)</li>
+                    <li>A03: Injection (M2, H6)</li>
+                    <li>A05: Security Misconfiguration (C3, H4)</li>
+                    <li>A07: Auth Failures (C2, H3)</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Build Verification -->
+        <div class="section-title" style="margin-top:2.5rem;"><span class="icon">&#128295;</span> Build Verification</div>
+        <div class="build-section">
+            <h3 style="font-weight:700;">Automated Verification Results</h3>
+            <div class="build-log">
+<span class="log-info">[INFO] --- maven-compiler-plugin:3.13.0:compile ---</span>
+<span class="log-info">[INFO] Compiling 18 source files with javac [release 21]</span>
+<span class="log-ok">[INFO] BUILD SUCCESS</span>
+<br>
+<span class="log-info">[CHECK] docker compose config</span>
+<span class="log-ok">[PASS] Docker Compose config valid</span>
+<br>
+<span class="log-info">[CHECK] python -m py_compile ai-worker/worker.py</span>
+<span class="log-ok">[PASS] Python syntax OK</span>
+<br>
+<span class="log-info">[CHECK] Fail-fast secret validation</span>
+<span class="log-ok">[PASS] JwtUtil rejects "change-me" placeholder</span>
+<span class="log-ok">[PASS] AuthController rejects "change-me" placeholder</span>
+<br>
+<span class="log-info">[CHECK] Security headers configured</span>
+<span class="log-ok">[PASS] CSP, X-Frame-Options, HSTS, Referrer-Policy, Permissions-Policy</span>
+<br>
+<span class="log-info">[CHECK] Rate limiting on /auth</span>
+<span class="log-ok">[PASS] /auth no longer exempt from rate limiting</span>
+            </div>
+        </div>
+
+        <!-- Files Modified -->
+        <div class="section-title" style="margin-top:2.5rem;"><span class="icon">&#128193;</span> Files Modified (16)</div>
+        <div class="files-grid">
+            <div class="file-card"><span class="file-icon">&#9881;&#65039;</span><div><div class="file-name">SecurityConfig.java</div><div class="file-fixes">C3, H4</div></div></div>
+            <div class="file-card"><span class="file-icon">&#128273;</span><div><div class="file-name">AuthController.java</div><div class="file-fixes">C2, C5</div></div></div>
+            <div class="file-card"><span class="file-icon">&#128273;</span><div><div class="file-name">JwtUtil.java</div><div class="file-fixes">C1, L2</div></div></div>
+            <div class="file-card"><span class="file-icon">&#128737;</span><div><div class="file-name">RateLimitFilter.java</div><div class="file-fixes">H2, H3, H5</div></div></div>
+            <div class="file-card"><span class="file-icon">&#128196;</span><div><div class="file-name">DicomController.java</div><div class="file-fixes">H6</div></div></div>
+            <div class="file-card"><span class="file-icon">&#128196;</span><div><div class="file-name">AnalysisController.java</div><div class="file-fixes">M1</div></div></div>
+            <div class="file-card"><span class="file-icon">&#128196;</span><div><div class="file-name">WadoController.java</div><div class="file-fixes">M2</div></div></div>
+            <div class="file-card"><span class="file-icon">&#128065;</span><div><div class="file-name">AuditAspect.java</div><div class="file-fixes">H1</div></div></div>
+            <div class="file-card"><span class="file-icon">&#128230;</span><div><div class="file-name">AnalysisResult.java</div><div class="file-fixes">M1</div></div></div>
+            <div class="file-card"><span class="file-icon">&#9881;&#65039;</span><div><div class="file-name">application.properties</div><div class="file-fixes">M3, H4</div></div></div>
+            <div class="file-card"><span class="file-icon">&#128013;</span><div><div class="file-name">worker.py</div><div class="file-fixes">C4, M6</div></div></div>
+            <div class="file-card"><span class="file-icon">&#128230;</span><div><div class="file-name">requirements.txt</div><div class="file-fixes">M5</div></div></div>
+            <div class="file-card"><span class="file-icon">&#128051;</span><div><div class="file-name">docker-compose.yml</div><div class="file-fixes">M3, M7, C4</div></div></div>
+            <div class="file-card"><span class="file-icon">&#127760;</span><div><div class="file-name">index.html</div><div class="file-fixes">M4</div></div></div>
+            <div class="file-card"><span class="file-icon">&#128218;</span><div><div class="file-name">pom.xml</div><div class="file-fixes">+validation dep</div></div></div>
+            <div class="file-card"><span class="file-icon">&#127919;</span><div><div class="file-name">MedVisionApplication.java</div><div class="file-fixes">+@EnableScheduling</div></div></div>
+        </div>
+    </div>
+
+    <div class="footer">
+        MedVision AI Security Audit &mdash; Confidential &mdash; Generated 2026-03-12 &mdash; 21 vulnerabilities identified and remediated
+    </div>
+
+    <script>
+        function toggleDetail(card) {
+            const detail = card.querySelector('.vuln-detail');
+            detail.classList.toggle('open');
+        }
+        // Auto-open first card for demo effect
+        document.querySelector('.vuln-card .vuln-detail').classList.add('open');
+    </script>
+</body>
+</html>

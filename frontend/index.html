@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MedVision AI - Painel do Radiologista</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Cornerstone.js for DICOM Rendering -->
+    <script src="https://unpkg.com/cornerstone-core@2.3.0/dist/cornerstone.min.js"></script>
+    <script src="https://unpkg.com/dicom-parser@1.8.13/dist/dicomParser.min.js"></script>
+    <script src="https://unpkg.com/cornerstone-wado-image-loader@4.1.5/dist/cornerstoneWADOImageLoader.bundle.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <nav class="bg-blue-800 text-white p-4 flex justify-between items-center shadow-lg">
+        <h1 class="text-2xl font-bold flex items-center">
+            <span class="mr-2">🩺</span> MedVision AI
+        </h1>
+        <div class="space-x-4">
+            <span class="bg-blue-600 px-3 py-1 rounded-full text-sm">IA Online (GPU: 48°C)</span>
+            <input type="file" id="dicom-upload" class="hidden" accept=".dcm">
+            <button onclick="document.getElementById('dicom-upload').click()" class="bg-green-600 hover:bg-green-700 px-4 py-1 rounded transition">Novo Upload</button>
+        </div>
+    </nav>
+
+    <main class="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Fila de Triagem (Triage Queue) -->
+        <section class="lg:col-span-1 bg-white rounded-lg shadow-md p-4">
+            <h2 class="text-xl font-semibold mb-4 border-b pb-2">Fila de Triagem Inteligente</h2>
+            <div id="triage-list" class="space-y-3">
+                <!-- Pacientes serão inseridos aqui -->
+                <div class="p-3 border-l-4 border-red-500 bg-red-50 rounded animate-pulse">
+                    <p class="font-bold">Carregando triagem...</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Visualizador DICOM + Laudo IA -->
+        <section class="lg:col-span-2 bg-white rounded-lg shadow-md p-4 flex flex-col">
+            <h2 class="text-xl font-semibold mb-4 border-b pb-2">Visualizador de Diagnóstico (VLM + CAD)</h2>
+            <div id="dicom-viewer" class="bg-black aspect-video flex items-center justify-center text-gray-500 rounded relative overflow-hidden" oncontextmenu="return false;" onmousedown="return false;">
+                <p id="viewer-placeholder">Selecione um exame para carregar o volume DICOM</p>
+                <div id="cornerstone-element" class="absolute inset-0 w-full h-full"></div>
+                <!-- Camada de Overlay da IA (Heatmap/Segmentação) -->
+                <canvas id="ai-overlay" class="absolute inset-0 pointer-events-none"></canvas>
+            </div>
+
+            <div class="mt-6">
+                <h3 class="font-bold text-lg text-blue-800">Rascunho de Laudo Automático (Moondream VLM)</h3>
+                <div id="ai-findings" class="mt-2 p-4 bg-blue-50 border border-blue-200 rounded text-gray-700 italic">
+                    Aguardando seleção de exame para processar visão clínica...
+                </div>
+                <div class="mt-4 flex space-x-2">
+                    <button class="flex-1 bg-blue-700 text-white py-2 rounded hover:bg-blue-800">Validar e Assinar</button>
+                    <button class="flex-1 bg-gray-200 text-gray-700 py-2 rounded hover:bg-gray-300">Solicitar Revisão Humana</button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        // Cornerstone setup
+        cornerstoneWADOImageLoader.external.cornerstone = cornerstone;
+        cornerstoneWADOImageLoader.configure({
+            beforeSend: function(xhr) {
+                if (authToken) {
+                    xhr.setRequestHeader('Authorization', `Bearer ${authToken}`);
+                }
+            }
+        });
+
+        const API_BASE_URL = "http://localhost:8080/api/v1";
+        let authToken = null;
+
+        // Mock authentication for the POC
+        async function authenticate() {
+            try {
+                const response = await fetch("http://localhost:8080/auth/token", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        apiKey: "change-me-in-production", // Using the default placeholder for the POC demo
+                        clientId: "RadiologyAssistantUI"
+                    })
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    authToken = data.token;
+                    console.log("Authenticated successfully");
+                }
+            } catch (error) {
+                console.error("Authentication failed:", error);
+            }
+        }
+
+        async function loadTriage() {
+            try {
+                if (!authToken) await authenticate();
+
+                let data = [];
+                try {
+                    const response = await fetch(`${API_BASE_URL}/results`, {
+                        headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {}
+                    });
+
+                    if (response.ok) {
+                        data = await response.json();
+                    } else {
+                        throw new Error("Backend response not OK");
+                    }
+                } catch (fetchError) {
+                    console.warn("Using fallback data - backend might be offline or unauthorized");
+                    data = [
+                        { patientName: "João Silva", priority: "CRITICAL", findings: "Hemorragia Detectada (Confiança 98%)", status: "COMPLETED", anomalyDetected: true },
+                        { patientName: "Maria Oliveira", priority: "MEDIUM", findings: "Massa Suspeita em Tórax (Confiança 62%)", status: "COMPLETED", anomalyDetected: true },
+                        { patientName: "Carlos Souza", priority: "LOW", findings: "Normal", status: "COMPLETED", anomalyDetected: false }
+                    ];
+                }
+
+                const list = document.getElementById('triage-list');
+                list.innerHTML = '';
+
+                data.sort((a, b) => {
+                    const order = { 'CRITICAL': 0, 'MEDIUM': 1, 'LOW': 2 };
+                    const pA = a.priority || 'LOW';
+                    const pB = b.priority || 'LOW';
+                    return (order[pA] ?? 2) - (order[pB] ?? 2);
+                });
+
+                data.forEach(item => {
+                    const priority = item.priority || 'LOW';
+                    const borderColor = priority === 'CRITICAL' ? 'border-red-600' : (priority === 'MEDIUM' ? 'border-yellow-500' : 'border-green-500');
+                    const bgColor = priority === 'CRITICAL' ? 'bg-red-50' : (priority === 'MEDIUM' ? 'bg-yellow-50' : 'bg-green-50');
+                    const badgeColor = priority === 'CRITICAL' ? 'bg-red-600' : (priority === 'MEDIUM' ? 'bg-yellow-600' : 'bg-green-600');
+
+                    const card = document.createElement('div');
+                    card.className = `p-4 border-l-4 ${borderColor} ${bgColor} rounded cursor-pointer hover:shadow-md transition`;
+                    card.addEventListener('click', () => selectPatient(item));
+
+                    const header = document.createElement('div');
+                    header.className = 'flex justify-between items-start';
+
+                    const nameSpan = document.createElement('span');
+                    nameSpan.className = 'font-bold text-gray-800';
+                    nameSpan.textContent = item.patientName;
+
+                    const badge = document.createElement('span');
+                    badge.className = `text-xs ${badgeColor} text-white px-2 py-0.5 rounded uppercase font-bold`;
+                    badge.textContent = priority;
+
+                    header.appendChild(nameSpan);
+                    header.appendChild(badge);
+
+                    const findingsP = document.createElement('p');
+                    findingsP.className = 'text-sm text-gray-600 mt-1 truncate';
+                    findingsP.textContent = item.findings;
+
+                    card.appendChild(header);
+                    card.appendChild(findingsP);
+                    list.appendChild(card);
+                });
+            } catch (error) {
+                console.error("Erro ao carregar triagem:", error);
+            }
+        }
+
+        async function handleUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/upload-dicom`, {
+                    method: 'POST',
+                    headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
+                    body: formData
+                });
+
+                if (response.ok) {
+                    alert("Upload concluído! A análise foi enviada para a fila.");
+                    loadTriage();
+                } else {
+                    const error = await response.text();
+                    alert("Erro no upload: " + error);
+                }
+            } catch (error) {
+                console.error("Upload error:", error);
+                alert("Erro ao conectar com o servidor.");
+            }
+        }
+
+        document.getElementById('dicom-upload').addEventListener('change', handleUpload);
+
+        function selectPatient(item) {
+            document.getElementById('ai-findings').innerHTML = formatReport(item);
+            document.getElementById('viewer-placeholder').classList.add('hidden');
+
+            const element = document.getElementById('cornerstone-element');
+            cornerstone.enable(element);
+
+            // WADO-RS URL pattern (simulated for POC)
+            const studyUID = item.studyUID;
+            const instanceUID = item.instanceUID;
+            const imageId = `wadowp:${API_BASE_URL}/dicom/studies/${studyUID}/instances/${instanceUID}/frames/1`;
+
+            cornerstone.loadImage(imageId).then(function(image) {
+                cornerstone.displayImage(element, image);
+
+                if (item.anomalyDetected) {
+                    drawAiOverlay(item);
+                } else {
+                    clearAiOverlay();
+                }
+            }).catch(err => {
+                console.error("Cornerstone load error:", err);
+                element.innerHTML = `<div class="text-red-500 p-4">Erro ao carregar DICOM. Verifique se o servidor está online.</div>`;
+            });
+        }
+
+        function formatReport(item) {
+            if (!item.structuredReport) return item.findings;
+            try {
+                const report = JSON.parse(item.structuredReport);
+                const measurements = item.measurements ? JSON.parse(item.measurements) : null;
+
+                let html = `<div class="space-y-2">`;
+                html += `<p><strong>Achados:</strong> ${report.findings}</p>`;
+                if (measurements && measurements.longest_diameter_mm) {
+                    html += `<p class="text-blue-700"><strong>Quantificação (RECIST):</strong> Lesão ${measurements.lesion_id} mede ${measurements.longest_diameter_mm} mm.</p>`;
+                }
+                html += `<p><strong>Impressão:</strong> ${report.impression}</p>`;
+                html += `<p class="text-sm italic"><strong>Recomendações:</strong> ${report.recommendations}</p>`;
+                html += `</div>`;
+                return html;
+            } catch (e) {
+                return item.findings;
+            }
+        }
+
+        function drawAiOverlay(item) {
+            const canvas = document.getElementById('ai-overlay');
+            const ctx = canvas.getContext('2d');
+            canvas.width = canvas.offsetWidth;
+            canvas.height = canvas.offsetHeight;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Random ROI for demonstration
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 3;
+            ctx.setLineDash([5, 5]);
+            ctx.strokeRect(canvas.width/3, canvas.height/3, 100, 100);
+
+            ctx.fillStyle = '#ef4444';
+            ctx.font = '12px bold sans-serif';
+            ctx.fillText("ROI_01: " + (item.classification || "ANOMALY"), canvas.width/3, canvas.height/3 - 5);
+        }
+
+        function clearAiOverlay() {
+            const canvas = document.getElementById('ai-overlay');
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        loadTriage();
+        // Atualizar triagem a cada 10 segundos para novos exames processados pela GPU
+        setInterval(loadTriage, 10000);
+    </script>
+</body>
+</html>
